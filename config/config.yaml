@@ -1,0 +1,25 @@
+app:
+  name: nats-project
+  version: 1.0.0
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 5s
+  write_timeout: 5s
+
+nats:
+  urls: ["nats://localhost:4222"]
+  cluster_id: "test-cluster"
+  client_id: "nats-project"
+  max_reconnects: 5
+  reconnect_wait: 5s
+
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+metrics:
+  enabled: true
+  port: 9090
