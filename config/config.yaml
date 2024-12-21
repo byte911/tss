@@ -12,8 +12,10 @@ nats:
   urls: ["nats://localhost:4222"]
   cluster_id: "test-cluster"
   client_id: "nats-project"
-  max_reconnects: 5
-  reconnect_wait: 5s
+  max_reconnects: 10
+  reconnect_wait: 1s
+  connect_timeout: 30s
+  operation_timeout: 30s
 
 log:
   level: "info"
