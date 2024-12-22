@@ -19,10 +19,11 @@ const (
 
 // NATSScheduler implements the Scheduler interface using NATS
 type NATSScheduler struct {
-	js           nats.JetStreamContext
-	logger       *zap.Logger
-	tasks        sync.Map // In-memory task cache
-	cronScheduler *CronScheduler
+	js              nats.JetStreamContext
+	logger          *zap.Logger
+	tasks           sync.Map // In-memory task cache
+	cronScheduler   *CronScheduler
+	depManager      *DependencyManager
 }
 
 // NewNATSScheduler creates a new NATS-based scheduler
@@ -31,6 +32,7 @@ func NewNATSScheduler(js nats.JetStreamContext, logger *zap.Logger) (*NATSSchedu
 		js:           js,
 		logger:       logger,
 		cronScheduler: NewCronScheduler(js, logger.Named("cron")),
+		depManager:   NewDependencyManager(logger.Named("deps")),
 	}
 
 	// Setup NATS streams with timeout context
@@ -90,52 +92,64 @@ func (s *NATSScheduler) setupSubscribers(ctx context.Context) error {
 	return err
 }
 
+// SubmitTask submits a new task to the scheduler
 func (s *NATSScheduler) SubmitTask(ctx context.Context, task *model.Task) error {
-	// Set initial task state
-	task.Status = model.TaskStatusPending
-	task.CreatedAt = time.Now()
-	if task.ScheduledAt.IsZero() {
-		task.ScheduledAt = task.CreatedAt
+	// Add task to dependency manager
+	if err := s.depManager.AddTask(task); err != nil {
+		return fmt.Errorf("failed to add task to dependency manager: %w", err)
 	}
 
-	// Store task in memory
+	// Only publish ready tasks to NATS
+	if task.Status == model.TaskStatusReady {
+		data, err := json.Marshal(task)
+		if err != nil {
+			return fmt.Errorf("failed to marshal task: %w", err)
+		}
+
+		_, err = s.js.Publish("task.submit", data)
+		if err != nil {
+			return fmt.Errorf("failed to publish task: %w", err)
+		}
+
+		s.logger.Info("Task submitted", 
+			zap.String("id", task.ID),
+			zap.String("status", string(task.Status)))
+	} else {
+		s.logger.Info("Task blocked by dependencies",
+			zap.String("id", task.ID),
+			zap.Strings("dependencies", task.Dependencies))
+	}
+
+	// Store task in cache
 	s.tasks.Store(task.ID, task)
-
-	// Publish task to NATS
-	data, err := json.Marshal(task)
-	if err != nil {
-		return fmt.Errorf("failed to marshal task: %w", err)
-	}
-
-	_, err = s.js.Publish("task.submit", data)
-	if err != nil {
-		return fmt.Errorf("failed to publish task: %w", err)
-	}
-
 	return nil
 }
 
 func (s *NATSScheduler) CancelTask(ctx context.Context, taskID string) error {
-	task, err := s.GetTaskStatus(ctx, taskID)
-	if err != nil {
-		return err
+	if taskIface, ok := s.tasks.Load(taskID); ok {
+		task := taskIface.(*model.Task)
+		task.Status = model.TaskStatusCancelled
+		s.tasks.Store(taskID, task)
+
+		result := &model.TaskResult{
+			TaskID:      taskID,
+			Status:      model.TaskStatusCancelled,
+			Error:       "Task cancelled by user",
+			CompletedAt: time.Now(),
+		}
+
+		data, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("failed to marshal task result: %w", err)
+		}
+
+		_, err = s.js.Publish("task.result", data)
+		if err != nil {
+			return fmt.Errorf("failed to publish task result: %w", err)
+		}
 	}
 
-	if task.Status != model.TaskStatusPending && task.Status != model.TaskStatusRunning {
-		return fmt.Errorf("task %s cannot be canceled in status %s", taskID, task.Status)
-	}
-
-	task.Status = model.TaskStatusCanceled
-	s.tasks.Store(taskID, task)
-
-	// Publish cancel event
-	data, err := json.Marshal(task)
-	if err != nil {
-		return fmt.Errorf("failed to marshal task: %w", err)
-	}
-
-	_, err = s.js.Publish(fmt.Sprintf("task.cancel.%s", taskID), data)
-	return err
+	return nil
 }
 
 func (s *NATSScheduler) GetTaskStatus(ctx context.Context, taskID string) (*model.Task, error) {
@@ -192,14 +206,30 @@ func (s *NATSScheduler) matchesFilters(task *model.Task, filters TaskFilters) bo
 }
 
 func (s *NATSScheduler) updateTaskStatus(result *model.TaskResult) {
-	if task, ok := s.tasks.Load(result.TaskID); ok {
-		t := task.(*model.Task)
-		t.Status = result.Status
-		t.Result = result.Result
-		t.ErrorMessage = result.Error
-		t.CompletedAt = &result.CompletedAt
-		t.ExecutorID = result.ExecutorID
-		s.tasks.Store(result.TaskID, t)
+	// Update task in cache
+	if taskIface, ok := s.tasks.Load(result.TaskID); ok {
+		task := taskIface.(*model.Task)
+		task.Status = result.Status
+		task.Result = result.Result
+		task.Error = result.Error
+		task.CompletedAt = &result.CompletedAt
+		s.tasks.Store(task.ID, task)
+
+		// Update dependency manager
+		s.depManager.UpdateTaskStatus(task.ID, result.Status)
+
+		// If task completed successfully, check for dependent tasks
+		if result.Status == model.TaskStatusComplete {
+			// Get ready tasks and submit them
+			readyTasks := s.depManager.GetReadyTasks()
+			for _, readyTask := range readyTasks {
+				if err := s.SubmitTask(context.Background(), readyTask); err != nil {
+					s.logger.Error("Failed to submit ready task",
+						zap.String("task_id", readyTask.ID),
+						zap.Error(err))
+				}
+			}
+		}
 	}
 }
 

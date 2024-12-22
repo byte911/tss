@@ -98,7 +98,7 @@ func (h *NotificationHandler) Execute(ctx context.Context, task *model.Task) (*m
 
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusCompleted,
+		Status:      model.TaskStatusComplete,
 		Result:      []byte(fmt.Sprintf("Notification sent to %d recipients", len(payload.Recipients))),
 		CompletedAt: time.Now(),
 	}, nil

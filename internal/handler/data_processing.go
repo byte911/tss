@@ -81,12 +81,15 @@ func (h *DataProcessingHandler) Execute(ctx context.Context, task *model.Task) (
 		return nil, fmt.Errorf("failed to marshal result: %w", err)
 	}
 
-	return &model.TaskResult{
+	// Update task status
+	taskResult := &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusCompleted,
+		Status:      model.TaskStatusComplete,
 		Result:      resultBytes,
 		CompletedAt: time.Now(),
-	}, nil
+	}
+
+	return taskResult, nil
 }
 
 // FilterProcessor implements filtering operations

@@ -82,7 +82,7 @@ func (h *DatabaseOperationHandler) Execute(ctx context.Context, task *model.Task
 
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusCompleted,
+		Status:      model.TaskStatusComplete,
 		Result:      resultBytes,
 		CompletedAt: time.Now(),
 	}, nil

@@ -36,7 +36,7 @@ func (h *ExampleTaskHandler) Execute(ctx context.Context, task *model.Task) (*mo
 	
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusCompleted,
+		Status:      model.TaskStatusComplete,
 		Result:      []byte("Task completed successfully"),
 		CompletedAt: time.Now(),
 	}, nil
@@ -44,9 +44,9 @@ func (h *ExampleTaskHandler) Execute(ctx context.Context, task *model.Task) (*mo
 
 func main() {
 	// Initialize logger
-	logger, err := zap.NewProduction()
+	logger, err := zap.NewDevelopment()
 	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
+		log.Fatalf("Failed to create logger: %v", err)
 	}
 	defer logger.Sync()
 
@@ -238,10 +238,10 @@ func main() {
 			ID:          fmt.Sprintf("task-%d", i+1),
 			Name:        task.name,
 			Description: fmt.Sprintf("Example %s task", task.name),
-			Priority:    model.TaskPriorityNormal,
+			Priority:    model.TaskPriorityMedium,
 			Payload:     payload,
 			CreatedAt:   time.Now(),
-			ScheduledAt: time.Now(),
+			Status:      model.TaskStatusPending,
 		}
 
 		if err := taskScheduler.SubmitTask(ctx, exampleTask); err != nil {

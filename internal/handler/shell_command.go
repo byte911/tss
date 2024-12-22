@@ -89,7 +89,7 @@ func (h *ShellCommandHandler) Execute(ctx context.Context, task *model.Task) (*m
 			result.Error = strings.TrimSpace(string(output))
 		}
 	} else {
-		result.Status = model.TaskStatusCompleted
+		result.Status = model.TaskStatusComplete
 	}
 
 	return result, nil

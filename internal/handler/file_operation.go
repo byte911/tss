@@ -106,7 +106,7 @@ func (h *FileOperationHandler) Execute(ctx context.Context, task *model.Task) (*
 
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusCompleted,
+		Status:      model.TaskStatusComplete,
 		Result:      result,
 		CompletedAt: time.Now(),
 	}, nil

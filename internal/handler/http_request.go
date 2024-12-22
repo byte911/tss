@@ -81,7 +81,7 @@ func (h *HTTPRequestHandler) Execute(ctx context.Context, task *model.Task) (*mo
 	// Create result
 	result := &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusCompleted,
+		Status:      model.TaskStatusComplete,
 		CompletedAt: time.Now(),
 		Result: body,
 	}
