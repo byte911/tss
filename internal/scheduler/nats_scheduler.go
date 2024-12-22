@@ -14,27 +14,23 @@ import (
 )
 
 const (
-	taskStreamName     = "TASKS"
-	taskSubmitSubject  = "task.submit"
-	taskStatusSubject  = "task.status"
-	taskResultSubject  = "task.result"
-	streamMaxAge       = 24 * time.Hour  // Keep messages for 24 hours
-	streamMaxMsgs      = -1             // Unlimited messages
-	operationTimeout   = 30 * time.Second
+	operationTimeout = 30 * time.Second
 )
 
 // NATSScheduler implements the Scheduler interface using NATS
 type NATSScheduler struct {
-	js      nats.JetStreamContext
-	logger  *zap.Logger
-	tasks   sync.Map // In-memory task cache
+	js           nats.JetStreamContext
+	logger       *zap.Logger
+	tasks        sync.Map // In-memory task cache
+	cronScheduler *CronScheduler
 }
 
 // NewNATSScheduler creates a new NATS-based scheduler
 func NewNATSScheduler(js nats.JetStreamContext, logger *zap.Logger) (*NATSScheduler, error) {
 	scheduler := &NATSScheduler{
-		js:     js,
-		logger: logger,
+		js:           js,
+		logger:       logger,
+		cronScheduler: NewCronScheduler(js, logger.Named("cron")),
 	}
 
 	// Setup NATS streams with timeout context
@@ -50,35 +46,40 @@ func NewNATSScheduler(js nats.JetStreamContext, logger *zap.Logger) (*NATSSchedu
 		return nil, fmt.Errorf("failed to setup subscribers: %w", err)
 	}
 
+	// Start cron scheduler
+	if err := scheduler.cronScheduler.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start cron scheduler: %w", err)
+	}
+
 	return scheduler, nil
 }
 
 func (s *NATSScheduler) setupStreams(ctx context.Context) error {
 	// Create task stream with configuration
 	_, err := s.js.AddStream(&nats.StreamConfig{
-		Name:     taskStreamName,
+		Name:     "TASKS",
 		Subjects: []string{"task.*"},
 		Storage:  nats.FileStorage,
-		MaxAge:   streamMaxAge,
-		MaxMsgs:  streamMaxMsgs,
+		MaxAge:   24 * time.Hour,
+		MaxMsgs:  -1,
 	}, nats.Context(ctx))
 
 	if err != nil {
 		// If stream already exists, that's okay
 		if err == nats.ErrStreamNameAlreadyInUse {
-			s.logger.Info("Stream already exists", zap.String("stream", taskStreamName))
+			s.logger.Info("Stream already exists", zap.String("stream", "TASKS"))
 			return nil
 		}
 		return err
 	}
 
-	s.logger.Info("Stream created successfully", zap.String("stream", taskStreamName))
+	s.logger.Info("Stream created successfully", zap.String("stream", "TASKS"))
 	return nil
 }
 
 func (s *NATSScheduler) setupSubscribers(ctx context.Context) error {
 	// Subscribe to task results
-	_, err := s.js.Subscribe(taskResultSubject, func(msg *nats.Msg) {
+	_, err := s.js.Subscribe("task.result", func(msg *nats.Msg) {
 		var result model.TaskResult
 		if err := json.Unmarshal(msg.Data, &result); err != nil {
 			s.logger.Error("Failed to unmarshal task result", zap.Error(err))
@@ -106,7 +107,7 @@ func (s *NATSScheduler) SubmitTask(ctx context.Context, task *model.Task) error 
 		return fmt.Errorf("failed to marshal task: %w", err)
 	}
 
-	_, err = s.js.Publish(taskSubmitSubject, data)
+	_, err = s.js.Publish("task.submit", data)
 	if err != nil {
 		return fmt.Errorf("failed to publish task: %w", err)
 	}
@@ -200,4 +201,24 @@ func (s *NATSScheduler) updateTaskStatus(result *model.TaskResult) {
 		t.ExecutorID = result.ExecutorID
 		s.tasks.Store(result.TaskID, t)
 	}
+}
+
+// AddSchedule adds a new cron schedule
+func (s *NATSScheduler) AddSchedule(ctx context.Context, schedule *model.CronSchedule) error {
+	return s.cronScheduler.AddSchedule(ctx, schedule)
+}
+
+// RemoveSchedule removes a cron schedule
+func (s *NATSScheduler) RemoveSchedule(id string) error {
+	return s.cronScheduler.RemoveSchedule(id)
+}
+
+// GetSchedule gets a cron schedule by ID
+func (s *NATSScheduler) GetSchedule(id string) (*model.CronSchedule, error) {
+	return s.cronScheduler.GetSchedule(id)
+}
+
+// ListSchedules lists all cron schedules
+func (s *NATSScheduler) ListSchedules() []*model.CronSchedule {
+	return s.cronScheduler.ListSchedules()
 }

@@ -19,6 +19,18 @@ type Scheduler interface {
 
 	// ListTasks retrieves a list of tasks based on filters
 	ListTasks(ctx context.Context, filters TaskFilters) ([]*model.Task, error)
+
+	// AddSchedule adds a new cron schedule
+	AddSchedule(ctx context.Context, schedule *model.CronSchedule) error
+
+	// RemoveSchedule removes a cron schedule
+	RemoveSchedule(id string) error
+
+	// GetSchedule gets a cron schedule by ID
+	GetSchedule(id string) (*model.CronSchedule, error)
+
+	// ListSchedules lists all cron schedules
+	ListSchedules() []*model.CronSchedule
 }
 
 // TaskFilters defines the filters for listing tasks
