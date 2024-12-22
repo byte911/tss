@@ -6,15 +6,21 @@ import (
 	"github.com/t77yq/nats-project/internal/model"
 )
 
-// Scheduler defines the interface for task scheduling operations
+// Scheduler defines the interface for task schedulers
 type Scheduler interface {
-	// SubmitTask submits a new task to the scheduler
+	// Start starts the scheduler
+	Start(ctx context.Context) error
+
+	// Stop stops the scheduler
+	Stop()
+
+	// SubmitTask submits a task for execution
 	SubmitTask(ctx context.Context, task *model.Task) error
 
 	// CancelTask cancels a running or pending task
 	CancelTask(ctx context.Context, taskID string) error
 
-	// GetTaskStatus retrieves the current status of a task
+	// GetTaskStatus returns the status of a task
 	GetTaskStatus(ctx context.Context, taskID string) (*model.Task, error)
 
 	// ListTasks retrieves a list of tasks based on filters
@@ -43,16 +49,19 @@ type TaskFilters struct {
 	Offset    int
 }
 
-// ExecutorRegistry manages task executor registration and discovery
-type ExecutorRegistry interface {
-	// RegisterExecutor registers a new task executor
-	RegisterExecutor(ctx context.Context, executor *Executor) error
+// ExecutorManager defines the interface for executor management
+type ExecutorManager interface {
+	// RegisterExecutor registers a new executor
+	RegisterExecutor(executor *model.Executor) error
 
-	// UnregisterExecutor removes a task executor
-	UnregisterExecutor(ctx context.Context, executorID string) error
+	// UnregisterExecutor unregisters an executor
+	UnregisterExecutor(executorID string)
 
-	// ListExecutors returns a list of available executors
-	ListExecutors(ctx context.Context) ([]*Executor, error)
+	// UpdateExecutorStats updates executor statistics
+	UpdateExecutorStats(executorID string, stats *model.ExecutorStats) error
+
+	// SelectExecutor selects an executor for a task
+	SelectExecutor(task *model.Task) (*model.Executor, error)
 }
 
 // Executor represents a task executor node
