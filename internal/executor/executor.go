@@ -109,48 +109,65 @@ func NewExecutor(js nats.JetStreamContext, config ExecutorConfig, logger *zap.Lo
 
 // setup initializes NATS streams and subscriptions
 func (e *Executor) setup() error {
-	// Create or update the task stream
-	streamInfo, err := e.js.StreamInfo(taskStreamName)
-	if err != nil && err != nats.ErrStreamNotFound {
-		return fmt.Errorf("failed to get stream info: %w", err)
+	// Create or update streams
+	streams := []struct {
+		name     string
+		subjects []string
+	}{
+		{
+			name:     taskStreamName,
+			subjects: []string{taskStreamSubjects, taskResultSubject},
+		},
+		{
+			name:     "HEARTBEATS",
+			subjects: []string{"executor.heartbeat", "executor.stats.*"},
+		},
 	}
 
-	if streamInfo == nil {
-		// Create new stream
-		_, err = e.js.AddStream(&nats.StreamConfig{
-			Name:       taskStreamName,
-			Subjects:   []string{taskStreamSubjects, taskResultSubject},
-			Retention:  nats.LimitsPolicy,
-			MaxAge:     24 * time.Hour,
-			MaxMsgs:    -1,
-			MaxBytes:   -1,
-			Discard:    nats.DiscardOld,
-			MaxMsgSize: 1 * 1024 * 1024, // 1MB
-			Storage:    nats.FileStorage,
-			Replicas:   1,
-			Duplicates: time.Hour,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create stream: %w", err)
+	for _, stream := range streams {
+		// Check if stream exists
+		streamInfo, err := e.js.StreamInfo(stream.name)
+		if err != nil && err != nats.ErrStreamNotFound {
+			return fmt.Errorf("failed to get stream info: %w", err)
 		}
-		e.logger.Info("Created task stream", zap.String("name", taskStreamName))
-	} else {
-		// Update existing stream while preserving retention policy
-		config := streamInfo.Config
-		config.Subjects = []string{taskStreamSubjects, taskResultSubject}
-		config.MaxAge = 24 * time.Hour
-		config.MaxMsgSize = 1 * 1024 * 1024
-		config.Duplicates = time.Hour
 
-		_, err = e.js.UpdateStream(&config)
-		if err != nil {
-			return fmt.Errorf("failed to update stream: %w", err)
+		if streamInfo == nil {
+			// Create new stream
+			_, err = e.js.AddStream(&nats.StreamConfig{
+				Name:       stream.name,
+				Subjects:   stream.subjects,
+				Retention:  nats.LimitsPolicy,
+				MaxAge:     24 * time.Hour,
+				MaxMsgs:    -1,
+				MaxBytes:   -1,
+				Discard:    nats.DiscardOld,
+				MaxMsgSize: 1 * 1024 * 1024, // 1MB
+				Storage:    nats.FileStorage,
+				Replicas:   1,
+				Duplicates: time.Hour,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create stream %s: %w", stream.name, err)
+			}
+			e.logger.Info("Created stream", zap.String("name", stream.name))
+		} else {
+			// Update existing stream while preserving retention policy
+			config := streamInfo.Config
+			config.Subjects = stream.subjects
+			config.MaxAge = 24 * time.Hour
+			config.MaxMsgSize = 1 * 1024 * 1024
+			config.Duplicates = time.Hour
+
+			_, err = e.js.UpdateStream(&config)
+			if err != nil {
+				return fmt.Errorf("failed to update stream %s: %w", stream.name, err)
+			}
+			e.logger.Info("Updated stream", zap.String("name", stream.name))
 		}
-		e.logger.Info("Updated task stream", zap.String("name", taskStreamName))
 	}
 
 	// Subscribe to task submissions with queue group
-	_, err = e.js.QueueSubscribe(
+	_, err := e.js.QueueSubscribe(
 		"task.submit",
 		"task_executors",
 		func(msg *nats.Msg) {
