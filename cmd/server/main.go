@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -13,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/t77yq/nats-project/internal/executor"
+	"github.com/t77yq/nats-project/internal/handler"
 	"github.com/t77yq/nats-project/internal/model"
 	"github.com/t77yq/nats-project/internal/scheduler"
 )
@@ -117,8 +120,16 @@ func main() {
 		logger.Fatal("Failed to create executor", zap.Error(err))
 	}
 
-	// Register example task handler
-	taskExecutor.RegisterHandler("example", &ExampleTaskHandler{logger: logger})
+	// Initialize and register task handlers
+	httpHandler := handler.NewHTTPRequestHandler(logger)
+	shellHandler := handler.NewShellCommandHandler(logger)
+	dataHandler := handler.NewDataProcessingHandler(logger)
+	exampleHandler := &ExampleTaskHandler{logger: logger}
+
+	taskExecutor.RegisterHandler("http_request", httpHandler)
+	taskExecutor.RegisterHandler("shell_command", shellHandler)
+	taskExecutor.RegisterHandler("data_processing", dataHandler)
+	taskExecutor.RegisterHandler("example", exampleHandler)
 
 	// Setup signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -133,18 +144,66 @@ func main() {
 		cancel()
 	}()
 
-	// Submit an example task
-	exampleTask := &model.Task{
-		ID:          "task-1",
-		Name:        "example",
-		Description: "Example task",
-		Priority:    model.TaskPriorityNormal,
-		CreatedAt:   time.Now(),
-		ScheduledAt: time.Now(),
+	// Submit example tasks
+	exampleTasks := []struct {
+		name    string
+		payload interface{}
+	}{
+		{
+			name: "http_request",
+			payload: handler.HTTPRequestPayload{
+				URL:     "https://api.github.com",
+				Method:  "GET",
+				Headers: map[string]string{"Accept": "application/json"},
+				Timeout: 10 * time.Second,
+			},
+		},
+		{
+			name: "shell_command",
+			payload: handler.ShellCommandPayload{
+				Command: "echo",
+				Args:    []string{"Hello, World!"},
+				Timeout: 5 * time.Second,
+			},
+		},
+		{
+			name: "data_processing",
+			payload: handler.DataProcessingPayload{
+				InputData: []int{1, 2, 3, 4, 5},
+				Operation: "transform",
+				Parameters: map[string]interface{}{
+					"multiply_by": 2,
+				},
+			},
+		},
+		{
+			name: "example",
+			payload: struct{}{},
+		},
 	}
 
-	if err := taskScheduler.SubmitTask(ctx, exampleTask); err != nil {
-		logger.Error("Failed to submit task", zap.Error(err))
+	for i, task := range exampleTasks {
+		payload, err := json.Marshal(task.payload)
+		if err != nil {
+			logger.Error("Failed to marshal task payload", zap.Error(err))
+			continue
+		}
+
+		exampleTask := &model.Task{
+			ID:          fmt.Sprintf("task-%d", i+1),
+			Name:        task.name,
+			Description: fmt.Sprintf("Example %s task", task.name),
+			Priority:    model.TaskPriorityNormal,
+			Payload:     payload,
+			CreatedAt:   time.Now(),
+			ScheduledAt: time.Now(),
+		}
+
+		if err := taskScheduler.SubmitTask(ctx, exampleTask); err != nil {
+			logger.Error("Failed to submit task", 
+				zap.String("task_name", task.name),
+				zap.Error(err))
+		}
 	}
 
 	// Start monitoring running tasks
