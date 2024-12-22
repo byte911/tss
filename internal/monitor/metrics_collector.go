@@ -41,25 +41,6 @@ func NewMetricsCollector(js nats.JetStreamContext, interval time.Duration, logge
 func (c *MetricsCollector) Start(ctx context.Context) error {
 	c.logger.Info("Starting metrics collector")
 
-	// Create metrics stream
-	_, err := c.js.StreamInfo("METRICS")
-	if err != nil {
-		if err != nats.ErrStreamNotFound {
-			return fmt.Errorf("failed to check metrics stream: %w", err)
-		}
-		// Create stream if not exists
-		_, err = c.js.AddStream(&nats.StreamConfig{
-			Name:     "METRICS",
-			Subjects: []string{"metrics.*", "executor.stats.*"},
-			Storage:  nats.FileStorage,
-			MaxAge:   24 * time.Hour,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create metrics stream: %w", err)
-		}
-		c.logger.Info("Created metrics stream")
-	}
-
 	// Subscribe to executor stats
 	if _, err := c.js.Subscribe("executor.stats.*", c.handleExecutorStats); err != nil {
 		return fmt.Errorf("failed to subscribe to executor stats: %w", err)
