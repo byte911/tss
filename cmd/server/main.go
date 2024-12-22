@@ -115,15 +115,28 @@ func main() {
 		logger.Fatal("Failed to create scheduler", zap.Error(err))
 	}
 
-	// Initialize task history storage
-	historyStorage, err := storage.NewSQLiteTaskHistory(logger, "task_history.db")
+	// Create task history storage
+	dbPath := "task_history.db"
+	history, err := storage.NewSQLiteTaskHistory(logger, dbPath)
 	if err != nil {
 		logger.Fatal("Failed to create task history storage", zap.Error(err))
 	}
-	defer historyStorage.Close()
 
-	// Initialize executor with history storage
-	taskExecutor, err := executor.NewExecutor(js, logger, historyStorage)
+	// Create executor config
+	executorConfig := executor.ExecutorConfig{
+		ID:         "executor-1",
+		Name:       "Main Executor",
+		Tags:       []string{"general"},
+		MaxTasks:   10,
+		MaxCPU:     80.0,  // 80% CPU limit
+		MaxMemory:  1 << 30, // 1GB memory limit
+		LogDir:     "./logs/tasks",  // 使用相对路径
+		MaxLogSize: 100 * 1024 * 1024, // 100MB
+		MaxLogAge:  7 * 24 * time.Hour, // 7 days
+	}
+
+	// Create executor
+	taskExecutor, err := executor.NewExecutor(js, executorConfig, logger, history)
 	if err != nil {
 		logger.Fatal("Failed to create executor", zap.Error(err))
 	}

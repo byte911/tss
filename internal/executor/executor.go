@@ -21,6 +21,19 @@ const (
 	taskResultSubject  = "task.result.*"
 )
 
+// ExecutorConfig defines configuration for the executor
+type ExecutorConfig struct {
+	ID          string
+	Name        string
+	Tags        []string
+	MaxTasks    int
+	MaxCPU     float64
+	MaxMemory  int64
+	LogDir     string
+	MaxLogSize int64
+	MaxLogAge  time.Duration
+}
+
 // TaskHandler defines the interface for task handlers
 type TaskHandler interface {
 	Execute(ctx context.Context, task *model.Task) (*model.TaskResult, error)
@@ -33,21 +46,63 @@ type Executor struct {
 	handlers     map[string]TaskHandler
 	runningTasks sync.Map
 	history      storage.TaskHistoryStorage
+	// New fields for resource and log management
+	config    ExecutorConfig
+	resources *ResourceManager
+	logs      *LogManager
+	stats     *model.ExecutorStats
 }
 
 // NewExecutor creates a new executor
-func NewExecutor(js nats.JetStreamContext, logger *zap.Logger, history storage.TaskHistoryStorage) (*Executor, error) {
+func NewExecutor(js nats.JetStreamContext, config ExecutorConfig, logger *zap.Logger, history storage.TaskHistoryStorage) (*Executor, error) {
+	// Create resource manager
+	resources, err := NewResourceManager(ResourceLimits{
+		MaxCPU:    config.MaxCPU,
+		MaxMemory: config.MaxMemory,
+		MaxTasks:  config.MaxTasks,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource manager: %w", err)
+	}
+
+	// Create log manager
+	logs, err := NewLogManager(LogConfig{
+		LogDir:        config.LogDir,
+		MaxFileSize:   config.MaxLogSize,
+		MaxAge:        config.MaxLogAge,
+		FlushInterval: 5 * time.Second,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log manager: %w", err)
+	}
+
 	executor := &Executor{
-		logger:   logger,
-		js:       js,
-		handlers: make(map[string]TaskHandler),
-		history:  history,
+		logger:    logger,
+		js:        js,
+		handlers:  make(map[string]TaskHandler),
+		history:   history,
+		config:    config,
+		resources: resources,
+		logs:      logs,
+		stats:     &model.ExecutorStats{},
 	}
 
 	// Setup streams and subjects
 	if err := executor.setup(); err != nil {
 		return nil, err
 	}
+
+	// Start resource and log managers
+	if err := resources.Start(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to start resource manager: %w", err)
+	}
+
+	if err := logs.Start(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to start log manager: %w", err)
+	}
+
+	// Start heartbeat
+	go executor.heartbeat()
 
 	return executor, nil
 }
@@ -143,6 +198,13 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *model.Task) error {
 		return fmt.Errorf("unknown task type: %s", task.Name)
 	}
 
+	// Create process for task
+	processID, err := e.resources.CreateProcess(ctx, task)
+	if err != nil {
+		return fmt.Errorf("failed to create process: %w", err)
+	}
+	defer e.resources.RemoveProcess(ctx, processID)
+
 	// Create task history record
 	historyID := uuid.New().String()
 	startTime := time.Now()
@@ -165,6 +227,11 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *model.Task) error {
 	// Track running task
 	e.runningTasks.Store(task.ID, task)
 	defer e.runningTasks.Delete(task.ID)
+
+	// Start process
+	if err := e.resources.StartProcess(ctx, processID); err != nil {
+		return fmt.Errorf("failed to start process: %w", err)
+	}
 
 	// Execute task
 	result, err := handler.Execute(ctx, task)
@@ -192,6 +259,13 @@ func (e *Executor) ExecuteTask(ctx context.Context, task *model.Task) error {
 			zap.Error(err))
 	}
 
+	// Stop process
+	if err := e.resources.StopProcess(ctx, processID); err != nil {
+		e.logger.Error("Failed to stop process",
+			zap.String("process_id", processID),
+			zap.Error(err))
+	}
+
 	// Publish result
 	if err := e.publishResult(task.ID, result); err != nil {
 		e.logger.Error("Failed to publish task result",
@@ -215,36 +289,6 @@ func (e *Executor) GetRunningTasks() []*model.Task {
 	return tasks
 }
 
-// publishResult publishes the task result to NATS
-func (e *Executor) publishResult(taskID string, result *model.TaskResult) error {
-	if result == nil {
-		result = &model.TaskResult{
-			TaskID:      taskID,
-			Status:      model.TaskStatusFailed,
-			Error:       "task execution failed with nil result",
-			CompletedAt: time.Now(),
-		}
-	}
-
-	data, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("failed to marshal result: %w", err)
-	}
-
-	subject := fmt.Sprintf("task.result.%s", taskID)
-	_, err = e.js.Publish(subject, data, nats.ExpectStream(taskStreamName))
-	if err != nil {
-		return fmt.Errorf("failed to publish result: %w", err)
-	}
-
-	e.logger.Debug("Published task result",
-		zap.String("task_id", taskID),
-		zap.String("subject", subject),
-		zap.String("status", string(result.Status)))
-
-	return nil
-}
-
 // GetTaskHistory retrieves task execution history
 func (e *Executor) GetTaskHistory(ctx context.Context, filters map[string]interface{}, offset, limit int) ([]*storage.TaskHistory, error) {
 	return e.history.List(ctx, filters, offset, limit)
@@ -253,6 +297,63 @@ func (e *Executor) GetTaskHistory(ctx context.Context, filters map[string]interf
 // GetTaskHistoryByID retrieves a specific task history record
 func (e *Executor) GetTaskHistoryByID(ctx context.Context, id string) (*storage.TaskHistory, error) {
 	return e.history.Get(ctx, id)
+}
+
+// GetTaskLogs retrieves logs for a task
+func (e *Executor) GetTaskLogs(taskID string, start, end time.Time) ([]LogEntry, error) {
+	return e.logs.GetLogs(taskID, start, end)
+}
+
+// GetStats returns current executor statistics
+func (e *Executor) GetStats() *model.ExecutorStats {
+	return e.resources.GetStats()
+}
+
+// heartbeat sends periodic heartbeat to scheduler
+func (e *Executor) heartbeat() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		stats := e.resources.GetStats()
+		heartbeat := struct {
+			ExecutorID string              `json:"executor_id"`
+			Timestamp  time.Time           `json:"timestamp"`
+			Stats     *model.ExecutorStats `json:"stats"`
+		}{
+			ExecutorID: e.config.ID,
+			Timestamp:  time.Now(),
+			Stats:     stats,
+		}
+
+		data, err := json.Marshal(heartbeat)
+		if err != nil {
+			e.logger.Error("Failed to marshal heartbeat", zap.Error(err))
+			continue
+		}
+
+		if _, err := e.js.Publish("executor.heartbeat", data); err != nil {
+			e.logger.Error("Failed to publish heartbeat", zap.Error(err))
+		}
+	}
+}
+
+// Stop stops the executor
+func (e *Executor) Stop() {
+	e.logger.Info("Stopping executor")
+	e.resources.Stop()
+	e.logs.Stop()
+}
+
+// publishResult publishes the task result to NATS
+func (e *Executor) publishResult(taskID string, result *model.TaskResult) error {
+	data, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	_, err = e.js.Publish(fmt.Sprintf("task.result.%s", taskID), data)
+	return err
 }
 
 // CleanupOldHistory deletes task history records older than the specified time

@@ -49,9 +49,11 @@ type Task struct {
 	DependentTasks []string          `json:"dependent_tasks,omitempty"`
 
 	// Execution fields
-	ExecutorID string  `json:"executor_id,omitempty"`
-	CPU        float64 `json:"cpu,omitempty"`
-	Memory     float64 `json:"memory,omitempty"`
+	Command     string  `json:"command,omitempty"`     // Command to execute
+	WorkingDir  string  `json:"working_dir,omitempty"` // Working directory for command execution
+	ExecutorID  string  `json:"executor_id,omitempty"`
+	CPU         float64 `json:"cpu,omitempty"`
+	Memory      float64 `json:"memory,omitempty"`
 }
 
 // TaskResult represents the result of a task execution
