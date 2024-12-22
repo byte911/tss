@@ -19,20 +19,20 @@ const (
 
 // NATSScheduler implements the Scheduler interface using NATS
 type NATSScheduler struct {
-	js              nats.JetStreamContext
-	logger          *zap.Logger
-	tasks           sync.Map // In-memory task cache
-	cronScheduler   *CronScheduler
-	depManager      *DependencyManager
+	js            nats.JetStreamContext
+	logger        *zap.Logger
+	tasks         sync.Map // In-memory task cache
+	cronScheduler *CronScheduler
+	depManager    *DependencyManager
 }
 
 // NewNATSScheduler creates a new NATS-based scheduler
 func NewNATSScheduler(js nats.JetStreamContext, logger *zap.Logger) (*NATSScheduler, error) {
 	scheduler := &NATSScheduler{
-		js:           js,
-		logger:       logger,
+		js:            js,
+		logger:        logger,
 		cronScheduler: NewCronScheduler(js, logger.Named("cron")),
-		depManager:   NewDependencyManager(logger.Named("deps")),
+		depManager:    NewDependencyManager(logger.Named("deps")),
 	}
 
 	// Setup NATS streams with timeout context
@@ -206,30 +206,23 @@ func (s *NATSScheduler) matchesFilters(task *model.Task, filters TaskFilters) bo
 }
 
 func (s *NATSScheduler) updateTaskStatus(result *model.TaskResult) {
-	// Update task in cache
 	if taskIface, ok := s.tasks.Load(result.TaskID); ok {
 		task := taskIface.(*model.Task)
 		task.Status = result.Status
-		task.Result = result.Result
-		task.Error = result.Error
-		task.CompletedAt = &result.CompletedAt
-		s.tasks.Store(task.ID, task)
-
-		// Update dependency manager
-		s.depManager.UpdateTaskStatus(task.ID, result.Status)
-
-		// If task completed successfully, check for dependent tasks
-		if result.Status == model.TaskStatusComplete {
-			// Get ready tasks and submit them
-			readyTasks := s.depManager.GetReadyTasks()
-			for _, readyTask := range readyTasks {
-				if err := s.SubmitTask(context.Background(), readyTask); err != nil {
-					s.logger.Error("Failed to submit ready task",
-						zap.String("task_id", readyTask.ID),
-						zap.Error(err))
-				}
-			}
+		if result.Error != "" {
+			task.Error = result.Error
 		}
+		if len(result.Result) > 0 {
+			task.Result = result.Result
+		}
+		if result.Status == model.TaskStatusCompleted {
+			completedAt := result.CompletedAt
+			task.CompletedAt = &completedAt
+		}
+		s.tasks.Store(result.TaskID, task)
+
+		// Update dependencies
+		s.depManager.UpdateTaskStatus(result.TaskID, result.Status)
 	}
 }
 

@@ -29,10 +29,10 @@ const (
 // FileOperationPayload represents the payload for file operation tasks
 type FileOperationPayload struct {
 	Operation   FileOperationType `json:"operation"`
-	SourcePath  string           `json:"source_path"`
-	TargetPath  string           `json:"target_path,omitempty"`
-	Content     []byte           `json:"content,omitempty"`
-	Permissions os.FileMode      `json:"permissions,omitempty"`
+	SourcePath  string            `json:"source_path"`
+	TargetPath  string            `json:"target_path,omitempty"`
+	Content     []byte            `json:"content,omitempty"`
+	Permissions os.FileMode       `json:"permissions,omitempty"`
 }
 
 // FileOperationHandler handles file operations
@@ -106,7 +106,7 @@ func (h *FileOperationHandler) Execute(ctx context.Context, task *model.Task) (*
 
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusComplete,
+		Status:      model.TaskStatusCompleted,
 		Result:      result,
 		CompletedAt: time.Now(),
 	}, nil

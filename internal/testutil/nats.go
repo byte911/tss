@@ -14,13 +14,23 @@ import (
 func RunServerOnPort(port int) (*server.Server, error) {
 	opts := &server.Options{
 		Host:           "127.0.0.1",
-		Port:          port,
-		NoLog:         true,
-		NoSigs:        true,
+		Port:           port,
+		NoLog:          true,
+		NoSigs:         true,
 		MaxControlLine: 256,
 	}
 
 	return server.NewServer(opts)
+}
+
+// SetupJetStream sets up a NATS server with JetStream enabled for testing
+func SetupJetStream(t *testing.T) (nats.JetStreamContext, func()) {
+	t.Helper()
+
+	// Start NATS server with JetStream
+	_, js, cleanup := StartJetStream(t)
+
+	return js, cleanup
 }
 
 // StartJetStream starts a NATS server with JetStream enabled

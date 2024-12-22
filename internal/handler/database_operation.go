@@ -22,7 +22,7 @@ const (
 
 // DBOperationPayload represents the payload for database operation tasks
 type DBOperationPayload struct {
-	Operation DBOperationType    `json:"operation"`
+	Operation DBOperationType   `json:"operation"`
 	Query     string            `json:"query"`
 	Args      []interface{}     `json:"args"`
 	Options   map[string]string `json:"options"`
@@ -82,7 +82,7 @@ func (h *DatabaseOperationHandler) Execute(ctx context.Context, task *model.Task
 
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusComplete,
+		Status:      model.TaskStatusCompleted,
 		Result:      resultBytes,
 		CompletedAt: time.Now(),
 	}, nil
@@ -143,7 +143,7 @@ func (h *DatabaseOperationHandler) executeExec(ctx context.Context, query string
 	}
 
 	return map[string]int64{
-		"affected_rows": affected,
+		"affected_rows":  affected,
 		"last_insert_id": lastID,
 	}, nil
 }

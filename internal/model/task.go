@@ -12,9 +12,11 @@ const (
 	TaskStatusBlocked   TaskStatus = "blocked"
 	TaskStatusReady     TaskStatus = "ready"
 	TaskStatusRunning   TaskStatus = "running"
-	TaskStatusComplete  TaskStatus = "complete"
+	TaskStatusCompleted TaskStatus = "completed"
 	TaskStatusFailed    TaskStatus = "failed"
 	TaskStatusCancelled TaskStatus = "cancelled"
+	TaskStatusSkipped   TaskStatus = "skipped"
+	TaskStatusTimeout   TaskStatus = "timeout"
 )
 
 // TaskPriority represents the priority of a task
@@ -22,8 +24,9 @@ type TaskPriority string
 
 const (
 	TaskPriorityHigh   TaskPriority = "high"
-	TaskPriorityMedium TaskPriority = "medium"
+	TaskPriorityNormal TaskPriority = "normal"
 	TaskPriorityLow    TaskPriority = "low"
+	TaskPriorityCritical TaskPriority = "critical"
 )
 
 // Task represents a task to be executed
@@ -38,6 +41,7 @@ type Task struct {
 	Result      []byte       `json:"result,omitempty"`
 	Error       string       `json:"error,omitempty"`
 	CreatedAt   time.Time    `json:"created_at"`
+	ScheduledAt time.Time    `json:"scheduled_at"`
 	StartedAt   *time.Time   `json:"started_at,omitempty"`
 	CompletedAt *time.Time   `json:"completed_at,omitempty"`
 	LastAttempt time.Time    `json:"last_attempt"`

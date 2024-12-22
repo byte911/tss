@@ -17,17 +17,17 @@ type NotificationType string
 
 const (
 	NotificationEmail NotificationType = "email"
-	NotificationSMS  NotificationType = "sms"
-	NotificationPush NotificationType = "push"
+	NotificationSMS   NotificationType = "sms"
+	NotificationPush  NotificationType = "push"
 )
 
 // NotificationPayload represents the payload for notification tasks
 type NotificationPayload struct {
-	Type      NotificationType     `json:"type"`
-	Template  string              `json:"template"`
-	Data      interface{}         `json:"data"`
-	Recipients []string           `json:"recipients"`
-	Options    map[string]string  `json:"options"`
+	Type       NotificationType  `json:"type"`
+	Template   string            `json:"template"`
+	Data       interface{}       `json:"data"`
+	Recipients []string          `json:"recipients"`
+	Options    map[string]string `json:"options"`
 }
 
 // NotificationHandler handles notification sending
@@ -98,7 +98,7 @@ func (h *NotificationHandler) Execute(ctx context.Context, task *model.Task) (*m
 
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusComplete,
+		Status:      model.TaskStatusCompleted,
 		Result:      []byte(fmt.Sprintf("Notification sent to %d recipients", len(payload.Recipients))),
 		CompletedAt: time.Now(),
 	}, nil

@@ -18,8 +18,8 @@ type HTTPRequestPayload struct {
 	URL     string            `json:"url"`
 	Method  string            `json:"method"`
 	Headers map[string]string `json:"headers"`
-	Body    string           `json:"body"`
-	Timeout time.Duration    `json:"timeout"`
+	Body    string            `json:"body"`
+	Timeout time.Duration     `json:"timeout"`
 }
 
 // HTTPRequestHandler handles HTTP request tasks
@@ -81,9 +81,9 @@ func (h *HTTPRequestHandler) Execute(ctx context.Context, task *model.Task) (*mo
 	// Create result
 	result := &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusComplete,
+		Status:      model.TaskStatusCompleted,
 		CompletedAt: time.Now(),
-		Result: body,
+		Result:      body,
 	}
 
 	if resp.StatusCode >= 400 {

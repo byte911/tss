@@ -13,14 +13,14 @@ import (
 
 // DataProcessingPayload represents the payload for data processing tasks
 type DataProcessingPayload struct {
-	InputData    interface{} `json:"input_data"`
-	Operation    string      `json:"operation"`
-	Parameters   interface{} `json:"parameters"`
+	InputData  interface{} `json:"input_data"`
+	Operation  string      `json:"operation"`
+	Parameters interface{} `json:"parameters"`
 }
 
 // DataProcessingHandler handles data processing tasks
 type DataProcessingHandler struct {
-	logger *zap.Logger
+	logger     *zap.Logger
 	processors map[string]DataProcessor
 }
 
@@ -84,7 +84,7 @@ func (h *DataProcessingHandler) Execute(ctx context.Context, task *model.Task) (
 	// Update task status
 	taskResult := &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusComplete,
+		Status:      model.TaskStatusCompleted,
 		Result:      resultBytes,
 		CompletedAt: time.Now(),
 	}

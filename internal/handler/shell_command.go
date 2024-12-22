@@ -16,10 +16,10 @@ import (
 // ShellCommandPayload represents the payload for shell command tasks
 type ShellCommandPayload struct {
 	Command    string            `json:"command"`
-	Args       []string         `json:"args"`
+	Args       []string          `json:"args"`
 	Env        map[string]string `json:"env"`
-	WorkingDir string           `json:"working_dir"`
-	Timeout    time.Duration    `json:"timeout"`
+	WorkingDir string            `json:"working_dir"`
+	Timeout    time.Duration     `json:"timeout"`
 }
 
 // ShellCommandHandler handles shell command execution tasks
@@ -77,7 +77,7 @@ func (h *ShellCommandHandler) Execute(ctx context.Context, task *model.Task) (*m
 	result := &model.TaskResult{
 		TaskID:      task.ID,
 		CompletedAt: time.Now(),
-		Result:     output,
+		Result:      output,
 	}
 
 	if err != nil {
@@ -89,7 +89,7 @@ func (h *ShellCommandHandler) Execute(ctx context.Context, task *model.Task) (*m
 			result.Error = strings.TrimSpace(string(output))
 		}
 	} else {
-		result.Status = model.TaskStatusComplete
+		result.Status = model.TaskStatusCompleted
 	}
 
 	return result, nil

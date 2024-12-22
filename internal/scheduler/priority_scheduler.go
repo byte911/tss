@@ -34,9 +34,9 @@ func (q *TaskQueue) Less(i, j int) bool {
 		switch q.tasks[i].Priority {
 		case model.TaskPriorityHigh:
 			return true
-		case model.TaskPriorityMedium:
+		case model.TaskPriorityNormal:
 			return q.tasks[j].Priority == model.TaskPriorityLow
-		default:
+		case model.TaskPriorityLow:
 			return false
 		}
 	}
@@ -93,7 +93,7 @@ func NewPriorityScheduler(scheduler Scheduler, logger *zap.Logger) *PrioritySche
 
 	// Initialize queues for each priority level
 	ps.queues[model.TaskPriorityHigh] = &TaskQueue{}
-	ps.queues[model.TaskPriorityMedium] = &TaskQueue{}
+	ps.queues[model.TaskPriorityNormal] = &TaskQueue{}
 	ps.queues[model.TaskPriorityLow] = &TaskQueue{}
 
 	// Initialize priority queues
@@ -170,7 +170,7 @@ func (s *PriorityScheduler) scheduleTasks(ctx context.Context) {
 	// Check queues in priority order
 	priorities := []model.TaskPriority{
 		model.TaskPriorityHigh,
-		model.TaskPriorityMedium,
+		model.TaskPriorityNormal,
 		model.TaskPriorityLow,
 	}
 

@@ -27,16 +27,16 @@ type ExampleTaskHandler struct {
 }
 
 func (h *ExampleTaskHandler) Execute(ctx context.Context, task *model.Task) (*model.TaskResult, error) {
-	h.logger.Info("Executing task", 
+	h.logger.Info("Executing task",
 		zap.String("task_id", task.ID),
 		zap.String("task_name", task.Name))
-	
+
 	// Simulate some work
 	time.Sleep(2 * time.Second)
-	
+
 	return &model.TaskResult{
 		TaskID:      task.ID,
-		Status:      model.TaskStatusComplete,
+		Status:      model.TaskStatusCompleted,
 		Result:      []byte("Task completed successfully"),
 		CompletedAt: time.Now(),
 	}, nil
@@ -128,10 +128,10 @@ func main() {
 		Name:       "Main Executor",
 		Tags:       []string{"general"},
 		MaxTasks:   10,
-		MaxCPU:     80.0,  // 80% CPU limit
-		MaxMemory:  1 << 30, // 1GB memory limit
-		LogDir:     "./logs/tasks",  // 使用相对路径
-		MaxLogSize: 100 * 1024 * 1024, // 100MB
+		MaxCPU:     80.0,               // 80% CPU limit
+		MaxMemory:  1 << 30,            // 1GB memory limit
+		LogDir:     "./logs/tasks",     // 使用相对路径
+		MaxLogSize: 100 * 1024 * 1024,  // 100MB
 		MaxLogAge:  7 * 24 * time.Hour, // 7 days
 	}
 
@@ -235,7 +235,7 @@ func main() {
 			},
 		},
 		{
-			name: "example",
+			name:    "example",
 			payload: struct{}{},
 		},
 	}
@@ -251,14 +251,14 @@ func main() {
 			ID:          fmt.Sprintf("task-%d", i+1),
 			Name:        task.name,
 			Description: fmt.Sprintf("Example %s task", task.name),
-			Priority:    model.TaskPriorityMedium,
+			Priority:    model.TaskPriorityNormal,
 			Payload:     payload,
 			CreatedAt:   time.Now(),
 			Status:      model.TaskStatusPending,
 		}
 
 		if err := taskScheduler.SubmitTask(ctx, exampleTask); err != nil {
-			logger.Error("Failed to submit task", 
+			logger.Error("Failed to submit task",
 				zap.String("task_name", task.name),
 				zap.Error(err))
 		}
@@ -313,9 +313,9 @@ func main() {
 	// Wait for running tasks to complete
 	runningTasks := taskExecutor.GetRunningTasks()
 	if len(runningTasks) > 0 {
-		logger.Info("Waiting for running tasks to complete", 
+		logger.Info("Waiting for running tasks to complete",
 			zap.Int("count", len(runningTasks)))
-		
+
 		select {
 		case <-shutdownCtx.Done():
 			logger.Warn("Shutdown timeout reached, some tasks may not have completed")
