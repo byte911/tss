@@ -124,11 +124,29 @@ func main() {
 	httpHandler := handler.NewHTTPRequestHandler(logger)
 	shellHandler := handler.NewShellCommandHandler(logger)
 	dataHandler := handler.NewDataProcessingHandler(logger)
+	fileHandler := handler.NewFileOperationHandler(logger, "/tmp/taskhandler")
+	notificationHandler := handler.NewNotificationHandler(logger, handler.NotificationConfig{
+		Email: struct {
+			Host     string
+			Port     int
+			Username string
+			Password string
+			From     string
+		}{
+			Host:     "smtp.example.com",
+			Port:     587,
+			Username: "user@example.com",
+			Password: "password",
+			From:     "noreply@example.com",
+		},
+	})
 	exampleHandler := &ExampleTaskHandler{logger: logger}
 
 	taskExecutor.RegisterHandler("http_request", httpHandler)
 	taskExecutor.RegisterHandler("shell_command", shellHandler)
 	taskExecutor.RegisterHandler("data_processing", dataHandler)
+	taskExecutor.RegisterHandler("file_operation", fileHandler)
+	taskExecutor.RegisterHandler("notification", notificationHandler)
 	taskExecutor.RegisterHandler("example", exampleHandler)
 
 	// Setup signal handling for graceful shutdown
@@ -173,6 +191,25 @@ func main() {
 				Operation: "transform",
 				Parameters: map[string]interface{}{
 					"multiply_by": 2,
+				},
+			},
+		},
+		{
+			name: "file_operation",
+			payload: handler.FileOperationPayload{
+				Operation:  handler.FileOperationWrite,
+				SourcePath: "test.txt",
+				Content:    []byte("Hello, World!"),
+			},
+		},
+		{
+			name: "notification",
+			payload: handler.NotificationPayload{
+				Type:       handler.NotificationEmail,
+				Template:   "Hello, this is a test notification",
+				Recipients: []string{"user@example.com"},
+				Options: map[string]string{
+					"priority": "high",
 				},
 			},
 		},
