@@ -18,6 +18,7 @@ import (
 	"github.com/t77yq/nats-project/internal/handler"
 	"github.com/t77yq/nats-project/internal/model"
 	"github.com/t77yq/nats-project/internal/scheduler"
+	"github.com/t77yq/nats-project/internal/storage"
 )
 
 // ExampleTaskHandler implements a simple task handler
@@ -114,8 +115,15 @@ func main() {
 		logger.Fatal("Failed to create scheduler", zap.Error(err))
 	}
 
-	// Initialize executor
-	taskExecutor, err := executor.NewExecutor(js, logger)
+	// Initialize task history storage
+	historyStorage, err := storage.NewSQLiteTaskHistory(logger, "task_history.db")
+	if err != nil {
+		logger.Fatal("Failed to create task history storage", zap.Error(err))
+	}
+	defer historyStorage.Close()
+
+	// Initialize executor with history storage
+	taskExecutor, err := executor.NewExecutor(js, logger, historyStorage)
 	if err != nil {
 		logger.Fatal("Failed to create executor", zap.Error(err))
 	}
@@ -243,18 +251,41 @@ func main() {
 		}
 	}
 
-	// Start monitoring running tasks
+	// Start monitoring running tasks and cleanup old history
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
+		taskTicker := time.NewTicker(5 * time.Second)
+		cleanupTicker := time.NewTicker(24 * time.Hour)
+		defer taskTicker.Stop()
+		defer cleanupTicker.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
+			case <-taskTicker.C:
 				runningTasks := taskExecutor.GetRunningTasks()
 				logger.Info("Current running tasks", zap.Int("count", len(runningTasks)))
+
+				// Get recent task history
+				histories, err := taskExecutor.GetTaskHistory(ctx, nil, 0, 10)
+				if err != nil {
+					logger.Error("Failed to get task history", zap.Error(err))
+					continue
+				}
+
+				for _, history := range histories {
+					logger.Info("Recent task execution",
+						zap.String("task_id", history.TaskID),
+						zap.String("name", history.Name),
+						zap.String("status", string(history.Status)),
+						zap.Duration("duration", history.Duration))
+				}
+			case <-cleanupTicker.C:
+				// Cleanup task history older than 30 days
+				cutoff := time.Now().AddDate(0, 0, -30)
+				if err := taskExecutor.CleanupOldHistory(ctx, cutoff); err != nil {
+					logger.Error("Failed to cleanup old task history", zap.Error(err))
+				}
 			}
 		}
 	}()
